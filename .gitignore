@@ -7,6 +7,7 @@ target/
 ### CUSTOM ###
 application-local.yml
 application-prod.yml
+application-dev.yml
 temp/
 
 ### IntelliJ IDEA ###

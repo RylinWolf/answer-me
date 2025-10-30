@@ -7,7 +7,7 @@ import java.util.List;
 
 /**
 * 创建${dataName}请求
-
+* @author Rylin Wolf
 */
 @Data
 public class ${upperDataKey}AddRequest implements Serializable {

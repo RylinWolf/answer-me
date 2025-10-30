@@ -12,8 +12,10 @@ import java.util.stream.Collectors;
  *
  */
 public enum FileUploadBizEnum {
-
-    USER_AVATAR("用户头像", "user_avatar");
+    /** 文件上传枚举类 */
+    USER_AVATAR("用户头像", "user_avatar"),
+    APP_ICON("应用图标", "app_icon"),
+    SCORING_RESULT_PICTURE("评分结果图片", "scoring_result_picture");
 
     private final String text;
 
