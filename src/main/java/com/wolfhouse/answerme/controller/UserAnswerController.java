@@ -17,6 +17,7 @@ import com.wolfhouse.answerme.model.dto.useranswer.UserAnswerUpdateRequest;
 import com.wolfhouse.answerme.model.entity.App;
 import com.wolfhouse.answerme.model.entity.User;
 import com.wolfhouse.answerme.model.entity.UserAnswer;
+import com.wolfhouse.answerme.model.enums.ReviewStatusEnum;
 import com.wolfhouse.answerme.model.vo.UserAnswerVO;
 import com.wolfhouse.answerme.scoring.ScoringStrategyExecutor;
 import com.wolfhouse.answerme.service.AppService;
@@ -66,6 +67,10 @@ public class UserAnswerController {
         App app = appService.getById(userAnswerAddRequest.getAppId());
         // 判断 app 是否存在
         ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR);
+        // 判断是否过审
+        ThrowUtils.throwIf(ReviewStatusEnum.PASS.getValue() != app.getReviewStatus(),
+                           ErrorCode.FORBIDDEN_ERROR,
+                           "应用未通过审核，无法答题！");
         // 在此处将实体类和 DTO 进行转换
         UserAnswer userAnswer = new UserAnswer();
         BeanUtils.copyProperties(userAnswerAddRequest, userAnswer);
