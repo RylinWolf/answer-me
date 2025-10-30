@@ -14,17 +14,22 @@ import com.wolfhouse.answerme.model.dto.useranswer.UserAnswerAddRequest;
 import com.wolfhouse.answerme.model.dto.useranswer.UserAnswerEditRequest;
 import com.wolfhouse.answerme.model.dto.useranswer.UserAnswerQueryRequest;
 import com.wolfhouse.answerme.model.dto.useranswer.UserAnswerUpdateRequest;
+import com.wolfhouse.answerme.model.entity.App;
 import com.wolfhouse.answerme.model.entity.User;
 import com.wolfhouse.answerme.model.entity.UserAnswer;
 import com.wolfhouse.answerme.model.vo.UserAnswerVO;
+import com.wolfhouse.answerme.scoring.ScoringStrategyExecutor;
+import com.wolfhouse.answerme.service.AppService;
 import com.wolfhouse.answerme.service.UserAnswerService;
 import com.wolfhouse.answerme.service.UserService;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
+import java.util.List;
 
 /**
  * 用户答案接口
@@ -40,6 +45,11 @@ public class UserAnswerController {
     @Resource
     private UserService userService;
 
+    @Resource
+    private ScoringStrategyExecutor scoringStrategyExecutor;
+    @Autowired
+    private AppService appService;
+
 // region 增删改查
 
     /**
@@ -53,10 +63,14 @@ public class UserAnswerController {
     public BaseResponse<Long> adduserAnswer(@RequestBody UserAnswerAddRequest userAnswerAddRequest,
                                             HttpServletRequest request) {
         ThrowUtils.throwIf(userAnswerAddRequest == null, ErrorCode.PARAMS_ERROR);
+        App app = appService.getById(userAnswerAddRequest.getAppId());
+        // 判断 app 是否存在
+        ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR);
         // 在此处将实体类和 DTO 进行转换
         UserAnswer userAnswer = new UserAnswer();
         BeanUtils.copyProperties(userAnswerAddRequest, userAnswer);
-        userAnswer.setChoices(JSONUtil.toJsonStr(userAnswerAddRequest.getChoices()));
+        List<String> choices = userAnswerAddRequest.getChoices();
+        userAnswer.setChoices(JSONUtil.toJsonStr(choices));
         // 数据校验
         userAnswerService.validuserAnswer(userAnswer, true);
         //  填充默认值
@@ -66,8 +80,16 @@ public class UserAnswerController {
         boolean result = userAnswerService.save(userAnswer);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
         // 返回新写入的数据 id
-        long newuserAnswerId = userAnswer.getId();
-        return ResultUtils.success(newuserAnswerId);
+        long newUserAnswerId = userAnswer.getId();
+        // 调用评分模块
+        try {
+            UserAnswer newAnswer = scoringStrategyExecutor.doScore(choices, app);
+            newAnswer.setId(newUserAnswerId);
+            userAnswerService.updateById(newAnswer);
+        } catch (Exception e) {
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, "评分错误" + e.getMessage());
+        }
+        return ResultUtils.success(newUserAnswerId);
     }
 
     /**
@@ -257,4 +279,6 @@ public class UserAnswerController {
     }
 
     // endregion
+
+
 }

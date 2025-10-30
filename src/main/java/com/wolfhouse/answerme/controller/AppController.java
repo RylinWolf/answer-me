@@ -270,6 +270,7 @@ public class AppController {
         app.setReviewStatus(reviewStatus);
         app.setReviewerId(loginUser.getId());
         app.setReviewTime(new Date());
+        app.setReviewMessage(reviewRequest.getReviewMessage());
         boolean result = appService.updateById(app);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
         return ResultUtils.success(true);
