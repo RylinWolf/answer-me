@@ -1,5 +1,6 @@
 package com.wolfhouse.answerme.controller;
 
+import cn.hutool.core.util.StrUtil;
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.wolfhouse.answerme.ai.AiManager;
@@ -23,14 +24,20 @@ import com.wolfhouse.answerme.service.AppService;
 import com.wolfhouse.answerme.service.QuestionService;
 import com.wolfhouse.answerme.service.UserService;
 import com.wolfhouse.answerme.utils.AiJsonUtils;
+import com.zhipu.oapi.service.v4.model.ModelData;
+import io.reactivex.Flowable;
+import io.reactivex.schedulers.Schedulers;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import javax.annotation.Resource;
 import javax.servlet.http.HttpServletRequest;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.stream.Collectors;
 
 /**
  * 题目接口
@@ -284,5 +291,76 @@ public class QuestionController {
         return ResultUtils.success(dtoList);
     }
 
+    @GetMapping("/ai_generate/sse")
+    public SseEmitter aiGenerateQuestionSse(AiGenerateQuestionRequest request) {
+        ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
+        // 获取参数
+        Long appId = request.getAppId();
+        int questionNumber = request.getQuestionNumber();
+        int optionNumber = request.getOptionNumber();
+        // 获取应用信息
+        App app = appService.getById(appId);
+        ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR);
+        // 封装 Prompt
+        String userMessage = Prompts.userQuestionInput(app.getAppName(),
+                                                       app.getAppDesc(),
+                                                       AppTypeEnum.getEnumByValue(app.getAppType()),
+                                                       questionNumber,
+                                                       optionNumber);
+        // 建立 SSE 对象, 0L 永不超时
+        SseEmitter emitter = new SseEmitter(0L);
+        // Ai 生成
+        Flowable<ModelData> modelDataFlowable = aiManager.doStreamRequest(Prompts.systemQuestionPrompt(),
+                                                                          userMessage,
+                                                                          null);
+
+        // 左括号计数器，回归为 0 时表示左括号等于右括号，可以截取
+        AtomicInteger counter = new AtomicInteger(0);
+        // 拼接完整题目
+        StringBuilder stringBuilder = new StringBuilder();
+
+        modelDataFlowable
+            .observeOn(Schedulers.io())
+            .map(modelData -> modelData.getChoices()
+                                       .get(0)
+                                       .getDelta()
+                                       .getContent())
+            .map(msg -> msg.replaceAll("\\s", ""))
+            .filter(StrUtil::isNotBlank)
+            .flatMap(msg -> {
+                List<Character> charList = msg.chars()
+                                              .mapToObj(c -> (char) c)
+                                              .collect(Collectors.toList());
+                return Flowable.fromIterable(charList);
+            })
+            .doOnNext(c -> {
+                // 有内容需要拼接
+                // 如果是 '{'，计数器 + 1
+                if (c.equals('{')) {
+                    counter.incrementAndGet();
+                    stringBuilder.append(c);
+                    return;
+                }
+                if (counter.get() > 0) {
+                    stringBuilder.append(c);
+                }
+                if (c.equals('}')) {
+                    counter.decrementAndGet();
+                    if (counter.get() == 0) {
+                        // 有一道完整的题目，通过 SSE 返回
+                        emitter.send(stringBuilder.toString());
+                        // 重置
+                        stringBuilder.setLength(0);
+                    }
+                }
+
+            })
+            .doOnError(throwable -> log.error(throwable.getMessage()))
+            .doOnComplete(emitter::complete)
+            .subscribe();
+
+        return emitter;
+    }
     // endregion
+
 }

@@ -4,10 +4,8 @@ import com.wolfhouse.answerme.common.ErrorCode;
 import com.wolfhouse.answerme.exception.BusinessException;
 import com.zhipu.oapi.ClientV4;
 import com.zhipu.oapi.Constants;
-import com.zhipu.oapi.service.v4.model.ChatCompletionRequest;
-import com.zhipu.oapi.service.v4.model.ChatMessage;
-import com.zhipu.oapi.service.v4.model.ChatMessageRole;
-import com.zhipu.oapi.service.v4.model.ModelApiResponse;
+import com.zhipu.oapi.service.v4.model.*;
+import io.reactivex.Flowable;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -70,12 +68,45 @@ public class AiManager {
      * @return 模型返回的聊天内容字符串。
      */
     public String doRequest(String systemMessage, String userMessage, Boolean stream, Float temperature) {
-        List<ChatMessage> messages = new ArrayList<>();
-        ChatMessage systemChatMessage = new ChatMessage(ChatMessageRole.SYSTEM.value(), systemMessage);
-        ChatMessage userChatMessage = new ChatMessage(ChatMessageRole.USER.value(), userMessage);
-        messages.add(systemChatMessage);
-        messages.add(userChatMessage);
-        return doRequest(messages, stream, temperature);
+        return doRequest(buildMessageList(systemMessage, userMessage), stream, temperature);
+    }
+
+    /**
+     * 流式 执行对话请求的方法。(简化消息传递)
+     *
+     * @param systemMessage 系统消息内容，用于设定对话的上下文或指令。
+     * @param userMessage   用户消息内容，表示用户的输入或问题。
+     * @param temperature   控制生成内容的随机性，值越高越随机，越低越倾向于确定性。
+     * @return 模型返回的聊天内容字符串。
+     */
+    public Flowable<ModelData> doStreamRequest(String systemMessage, String userMessage, Float temperature) {
+        List<ChatMessage> messages = buildMessageList(systemMessage, userMessage);
+        return doStreamRequest(messages, temperature);
+    }
+    
+    /**
+     * 执行对话请求的方法。(流式)
+     *
+     * @param messages    包含聊天消息的列表，每条消息作为模型的输入。
+     * @param temperature 控制生成内容的随机性，值越高越随机，越低越倾向于确定性。
+     * @return 模型返回的聊天内容字符串。
+     */
+    public Flowable<ModelData> doStreamRequest(List<ChatMessage> messages, Float temperature) {
+        ChatCompletionRequest chatCompletionRequest = ChatCompletionRequest.builder()
+                                                                           .model(Constants.ModelChatGLM4)
+                                                                           .temperature(temperature)
+                                                                           .stream(Boolean.TRUE)
+                                                                           .invokeMethod(Constants.invokeMethod)
+                                                                           .messages(messages)
+                                                                           .build();
+        // 调用
+        try {
+            ModelApiResponse invokeModelApiResp = client.invokeModelApi(chatCompletionRequest);
+            return invokeModelApiResp.getFlowable();
+        } catch (Exception e) {
+            log.error("AI 生成失败", e);
+            throw new BusinessException(ErrorCode.SYSTEM_ERROR, e.getMessage());
+        }
     }
 
     /**
@@ -107,5 +138,14 @@ public class AiManager {
             log.error("AI 生成失败", e);
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, e.getMessage());
         }
+    }
+
+    private List<ChatMessage> buildMessageList(String systemMessage, String userMessage) {
+        List<ChatMessage> messages = new ArrayList<>();
+        ChatMessage systemChatMessage = new ChatMessage(ChatMessageRole.SYSTEM.value(), systemMessage);
+        ChatMessage userChatMessage = new ChatMessage(ChatMessageRole.USER.value(), userMessage);
+        messages.add(systemChatMessage);
+        messages.add(userChatMessage);
+        return messages;
     }
 }

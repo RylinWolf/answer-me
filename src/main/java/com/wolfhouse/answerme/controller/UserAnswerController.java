@@ -91,6 +91,8 @@ public class UserAnswerController {
         try {
             UserAnswer newAnswer = scoringStrategyExecutor.doScore(choices, app);
             newAnswer.setId(newUserAnswerId);
+            // 不更新 AppID，防止分表分片值更新
+            newAnswer.setAppId(null);
             userAnswerService.updateById(newAnswer);
         } catch (Exception e) {
             throw new BusinessException(ErrorCode.SYSTEM_ERROR, "评分错误" + e.getMessage());
@@ -202,10 +204,9 @@ public class UserAnswerController {
      * @return
      */
     @PostMapping("/list/page/vo")
-    public BaseResponse
-        <Page
-            <UserAnswerVO>> listuserAnswerVOByPage(@RequestBody UserAnswerQueryRequest userAnswerQueryRequest,
-                                                   HttpServletRequest request) {
+    public BaseResponse<Page<UserAnswerVO>> listuserAnswerVOByPage(
+        @RequestBody UserAnswerQueryRequest userAnswerQueryRequest,
+        HttpServletRequest request) {
         long current = userAnswerQueryRequest.getCurrent();
         long size = userAnswerQueryRequest.getPageSize();
         // 限制爬虫
@@ -226,10 +227,9 @@ public class UserAnswerController {
      * @return
      */
     @PostMapping("/my/list/page/vo")
-    public BaseResponse
-        <Page
-            <UserAnswerVO>> listMyuserAnswerVOByPage(@RequestBody UserAnswerQueryRequest userAnswerQueryRequest,
-                                                     HttpServletRequest request) {
+    public BaseResponse<Page<UserAnswerVO>> listMyuserAnswerVOByPage(
+        @RequestBody UserAnswerQueryRequest userAnswerQueryRequest,
+        HttpServletRequest request) {
         ThrowUtils.throwIf(userAnswerQueryRequest == null, ErrorCode.PARAMS_ERROR);
         // 补充查询条件，只查询当前登录用户的数据
         User loginUser = userService.getLoginUser(request);
