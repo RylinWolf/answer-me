@@ -10,6 +10,7 @@ application-prod.yml
 application-dev.yml
 temp/
 src/test/
+src/main/resources/prompt/
 
 ### IntelliJ IDEA ###
 .idea/modules.xml

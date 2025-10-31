@@ -2,6 +2,9 @@ package com.wolfhouse.answerme.controller;
 
 import cn.hutool.json.JSONUtil;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.wolfhouse.answerme.ai.AiManager;
+import com.wolfhouse.answerme.ai.Prompts;
+import com.wolfhouse.answerme.ai.dto.AiGenerateQuestionRequest;
 import com.wolfhouse.answerme.annotation.AuthCheck;
 import com.wolfhouse.answerme.common.BaseResponse;
 import com.wolfhouse.answerme.common.DeleteRequest;
@@ -11,13 +14,18 @@ import com.wolfhouse.answerme.constant.UserConstant;
 import com.wolfhouse.answerme.exception.BusinessException;
 import com.wolfhouse.answerme.exception.ThrowUtils;
 import com.wolfhouse.answerme.model.dto.question.*;
+import com.wolfhouse.answerme.model.entity.App;
 import com.wolfhouse.answerme.model.entity.Question;
 import com.wolfhouse.answerme.model.entity.User;
+import com.wolfhouse.answerme.model.enums.AppTypeEnum;
 import com.wolfhouse.answerme.model.vo.QuestionVO;
+import com.wolfhouse.answerme.service.AppService;
 import com.wolfhouse.answerme.service.QuestionService;
 import com.wolfhouse.answerme.service.UserService;
+import com.wolfhouse.answerme.utils.AiJsonUtils;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
 import javax.annotation.Resource;
@@ -37,6 +45,10 @@ public class QuestionController {
 
     @Resource
     private UserService userService;
+    @Resource
+    private AppService appService;
+    @Autowired
+    private AiManager aiManager;
 
 // region 增删改查
 
@@ -244,6 +256,32 @@ public class QuestionController {
         boolean result = questionService.updateById(question);
         ThrowUtils.throwIf(!result, ErrorCode.OPERATION_ERROR);
         return ResultUtils.success(true);
+    }
+
+    // endregion
+
+    // region AI 生成题目功能
+
+    @PostMapping("/ai_generate")
+    public BaseResponse<List<QuestionContentDto>> aiGenerateQuestion(@RequestBody AiGenerateQuestionRequest request) {
+        ThrowUtils.throwIf(request == null, ErrorCode.PARAMS_ERROR);
+        // 获取参数
+        Long appId = request.getAppId();
+        int questionNumber = request.getQuestionNumber();
+        int optionNumber = request.getOptionNumber();
+        // 获取应用信息
+        App app = appService.getById(appId);
+        ThrowUtils.throwIf(app == null, ErrorCode.NOT_FOUND_ERROR);
+        // 封装 Prompt
+        String userMessage = Prompts.userQuestionInput(app.getAppName(),
+                                                       app.getAppDesc(),
+                                                       AppTypeEnum.getEnumByValue(app.getAppType()),
+                                                       questionNumber,
+                                                       optionNumber);
+        // Ai 生成
+        String result = aiManager.doSyncRequest(Prompts.systemQuestionPrompt(), userMessage, null);
+        List<QuestionContentDto> dtoList = AiJsonUtils.toList(result, QuestionContentDto.class);
+        return ResultUtils.success(dtoList);
     }
 
     // endregion
